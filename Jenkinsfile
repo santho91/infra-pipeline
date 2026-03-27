@@ -1,53 +1,95 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    ENV = "${env.BRANCH_NAME}"
-    TF_WORKDIR = "environment/${env.BRANCH_NAME}"
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        git branch: "${env.BRANCH_NAME}", url: 'https://github.com/santho91/infra-pipeline.git'
-      }
+    parameters {
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Choose action')
     }
 
-    stage('Terraform Init') {
-      steps {
-        dir("${TF_WORKDIR}") {
-          sh 'terraform init'
+    environment {
+        ENV = "${env.BRANCH_NAME}"
+        TF_WORKDIR = "environment/${env.BRANCH_NAME}"
+    }
+
+    options {
+        skipDefaultCheckout(true)
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: "${env.BRANCH_NAME}", url: 'https://github.com/santho91/infra-pipeline.git'
+            }
         }
-      }
-    }
 
-    stage('Terraform Plan') {
-      steps {
-        dir("${TF_WORKDIR}") {
-          sh 'terraform plan -out=tfplan'
-          sh 'terraform show -no-color tfplan > tfplan.txt'
-          sh 'cat tfplan.txt'
+        stage('Terraform Init') {
+            steps {
+                dir("${TF_WORKDIR}") {
+                    sh 'terraform init'
+                }
+            }
         }
-      }
-    }
 
-    stage('Approval') {
-      
-      when {
-        expression { env.BRANCH_NAME == 'production' }
-      }
-      
-      steps {
-        input message: "Approvee the deployment to production?", ok: 'Deploy'
-      }
-    }
-
-    stage('Terraform Apply') {
-      steps {
-        dir("${TF_WORKDIR}") {
-          sh 'terraform apply tfplan'
+        stage('Terraform Plan') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                dir("${TF_WORKDIR}") {
+                    sh 'terraform plan -out=tfplan'
+                    sh 'terraform show -no-color tfplan > tfplan.txt'
+                    sh 'cat tfplan.txt'
+                }
+            }
         }
-      }
+
+        stage('Approval') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                input 'Do you want to apply?'
+            }
+        }
+
+        stage('Terraform Apply') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                dir("${TF_WORKDIR}") {
+                    sh 'terraform apply -auto-approve tfplan'
+                }
+            }
+        }
+
+        stage('Destroy Approval') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                input 'Do you want to destroy infrastructure?'
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                dir("${TF_WORKDIR}") {
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+        }
     }
-  }
+
+    post {
+        success {
+            echo "✅ Pipeline executed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed!"
+        }
+    }
 }
