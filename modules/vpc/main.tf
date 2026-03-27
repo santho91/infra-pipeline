@@ -18,6 +18,6 @@ resource "aws_subnet" "publsub" {
 }
 
 output "subnet_id" {
-  value = aws_subnet.pubsub.id
+  value = aws_subnet.publsub.id
   description = "Get the subnet id"
 }
